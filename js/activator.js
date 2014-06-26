@@ -1,9 +1,4 @@
-/**
- * Durandal 2.1.0 Copyright (c) 2012 Blue Spire Consulting, Inc. All Rights Reserved.
- * Available via the MIT license.
- * see: http://durandaljs.com or https://github.com/BlueSpire/Durandal for details.
- */
-/**
+﻿/**
  * The activator module encapsulates all logic related to screen/component activation.
  * An activator is essentially an asynchronous state machine that understands a particular state transition protocol.
  * The protocol ensures that the following series of events always occur: `canDeactivate` (previous state), `canActivate` (new state), `deactivate` (previous state), `activate` (new state).
@@ -53,6 +48,10 @@ define(['durandal/system', 'knockout'], function (system, ko) {
 
         return settings;
     }
+    
+    function hasChildRouter(instance) {
+        return instance && instance.router && instance.router.loadUrl;
+    }
 
     function invoke(target, method, data) {
         if (system.isArray(data)) {
@@ -62,7 +61,7 @@ define(['durandal/system', 'knockout'], function (system, ko) {
         return target[method](data);
     }
 
-    function deactivate(item, close, settings, dfd, setter) {
+    function processDeactivate(item, close, settings, dfd, setter) {
         if (item && item.deactivate) {
             system.log('Deactivating', item);
 
@@ -94,6 +93,23 @@ define(['durandal/system', 'knockout'], function (system, ko) {
 
             dfd.resolve(true);
         }
+    }
+    
+    function deactivate(item, close, settings, dfd, setter) {
+    if (!hasChildRouter(item)) {
+        processDeactivate(item, close, settings, dfd, setter);
+    }
+    else
+        system.defer(function(dfd2){
+            var childItem = item.router.activeItem;
+            var childSettings = childItem.settings;
+            processDeactivate(childItem, childSettings.closeOnDeactivate, childSettings, dfd2);
+        }).promise().then(function(childDeactivateSucceeded){
+            if (childDeactivateSucceeded)
+                processDeactivate(item, close, settings, dfd, setter);
+            else
+                dfd.resolve(false);
+        });
     }
 
     function activate(newItem, activeItem, callback, activationData) {
@@ -259,7 +275,20 @@ define(['durandal/system', 'knockout'], function (system, ko) {
          * @return {promise}
          */
         computed.canDeactivateItem = function (item, close, options) {
-            return canDeactivateItem(item, close, settings, options);
+            if (!hasChildRouter(item))
+                return canDeactivateItem(item, close, settings);
+            else
+                return system.defer(function(dfd) {
+                    var childItem = item.router.activeItem;
+                    childItem.canDeactivateItem(childItem(), childItem.settings.closeOnDeactivate).then(function(canDeactivateChild) {
+                        if (canDeactivateChild)
+                            canDeactivateItem(item, close, settings).then(function(canDeactivate){
+                                dfd.resolve(canDeactivate);
+                            });
+                        else
+                            dfd.resolve(false);
+                    });
+                }).promise();
         };
 
         /**
