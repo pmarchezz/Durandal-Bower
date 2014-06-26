@@ -63,8 +63,6 @@ define(['durandal/system', 'knockout'], function (system, ko) {
 
     function processDeactivate(item, close, settings, dfd, setter) {
         if (item && item.deactivate) {
-            system.log('Deactivating', item);
-
             var result;
             try {
                 result = item.deactivate(close);
